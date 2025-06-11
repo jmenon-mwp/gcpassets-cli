@@ -8,94 +8,6 @@ from google.cloud import asset_v1
 from googleapiclient.discovery import build
 from google.protobuf.json_format import MessageToDict
 
-class Spinner:
-    def __init__(self, message=""):
-        self.running = False
-        self.thread = None
-        self.message = message
-
-    def start(self):
-        self.running = True
-        self.thread = threading.Thread(target=self._spin)
-        self.thread.daemon = True
-        self.thread.start()
-
-    def _spin(self):
-        chars = "|/-\\"
-        idx = 0
-        while self.running:
-            print(f"\r{self.message}{chars[idx]}", end="", flush=True)
-            idx = (idx + 1) % len(chars)
-            time.sleep(0.1)
-
-    def stop(self):
-        self.running = False
-        if self.thread:
-            self.thread.join()
-        print(f"\r{self.message}done.", flush=True)
-
-def fetch_assets(scope, debug=False):
-    client = asset_v1.AssetServiceClient()
-    asset_types_to_fetch = [
-        "cloudresourcemanager.googleapis.com/Organization",
-        "cloudresourcemanager.googleapis.com/Folder",
-        "cloudresourcemanager.googleapis.com/Project"
-    ]
-    assets_from_api = []
-    try:
-        first_resource = None
-        for i, asset in enumerate(client.search_all_resources(scope=scope, asset_types=asset_types_to_fetch)):
-            if i == 0:
-                first_resource = asset
-
-            assets_from_api.append({
-                'name': asset.name,
-                'asset_type': asset.asset_type,
-                'display_name': getattr(asset, 'display_name', ''),
-                'parent': asset.parent_full_resource_name.replace("//cloudresourcemanager.googleapis.com/", "")
-            })
-        if debug and first_resource:
-            print("Debug: First resource raw data:")
-            print(json.dumps(MessageToDict(first_resource._pb), indent=2))
-    except Exception as e:
-        print(f"Error fetching assets from GCP: {e}")
-    return assets_from_api
-
-def fetch_flat_resources(scope, asset_type, debug=False):
-    client = asset_v1.AssetServiceClient()
-    resources_data = []
-    seen_resources = set()
-    try:
-        first_resource = None
-        for i, resource in enumerate(client.search_all_resources(scope=scope, asset_types=[asset_type])):
-            if i == 0:
-                first_resource = resource
-
-            resource_dict = {
-                'name': resource.name,
-                'asset_type': resource.asset_type,
-                'project': resource.project,
-                'display_name': getattr(resource, 'display_name', ''),
-                'location': getattr(resource, 'location', ''),
-                'parent_full_resource_name': resource.parent_full_resource_name
-            }
-
-            # Handle BigQuery dataset duplicates
-            if resource.asset_type == "bigquery.googleapis.com/Dataset":
-                key = (resource_dict['project'], resource_dict['name'])
-                if key in seen_resources:
-                    continue
-                seen_resources.add(key)
-                resources_data.append(resource_dict)
-            else:
-                resources_data.append(resource_dict)
-
-        if debug and first_resource:
-            print(json.dumps(MessageToDict(first_resource._pb), indent=2))
-    except Exception as e:
-        print(f"Error fetching resources from GCP: {e}")
-    return resources_data
-
 # Embedded API type aliases
 ASSET_TYPE_MAPPING = {
     'bucket': 'storage.googleapis.com/Bucket',
@@ -142,11 +54,136 @@ ASSET_TYPE_MAPPING = {
     'vpntunnel': 'compute.googleapis.com/VpnTunnel'
 }
 
+class Spinner:
+    def __init__(self, message=""):
+        self.running = False
+        self.thread = None
+        self.message = message
+
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._spin)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def _spin(self):
+        chars = "|/-\\"
+        idx = 0
+        while self.running:
+            print(f"\r{self.message}{chars[idx]}", end="", flush=True)
+            idx = (idx + 1) % len(chars)
+            time.sleep(0.1)
+
+    def stop(self):
+        self.running = False
+        if self.thread:
+            self.thread.join()
+        print(f"\r{self.message}done.", flush=True)
+
+def fetch_assets(scope, debug=False):
+    """
+    Fetches GCP assets (organizations, folders, projects) for the given scope.
+
+    Args:
+        scope: The GCP scope to search within (e.g., organizations/1234567890)
+        debug: If True, prints debug information
+
+    Returns:
+        List of asset dictionaries with their hierarchy information
+    """
+    client = asset_v1.AssetServiceClient()
+    asset_types_to_fetch = [
+        "cloudresourcemanager.googleapis.com/Organization",
+        "cloudresourcemanager.googleapis.com/Folder",
+        "cloudresourcemanager.googleapis.com/Project"
+    ]
+    assets_from_api = []
+    try:
+        first_resource = None
+        for i, asset in enumerate(client.search_all_resources(scope=scope, asset_types=asset_types_to_fetch)):
+            if i == 0:
+                first_resource = asset
+
+            assets_from_api.append({
+                'name': asset.name,
+                'asset_type': asset.asset_type,
+                'display_name': getattr(asset, 'display_name', ''),
+                'parent': asset.parent_full_resource_name.replace("//cloudresourcemanager.googleapis.com/", "")
+            })
+        if debug and first_resource:
+            print("Debug: First resource raw data:")
+            print(json.dumps(MessageToDict(first_resource._pb), indent=2))
+    except Exception as e:
+        print(f"Error fetching assets from GCP: {e}")
+    return assets_from_api
+
+def fetch_flat_resources(scope, asset_type, debug=False):
+    """
+    Fetches GCP resources of a specific type for the given scope.
+
+    Args:
+        scope: The GCP scope to search within (e.g., organizations/1234567890)
+        asset_type: The type of resource to fetch (e.g., compute.googleapis.com/Instance)
+        debug: If True, prints debug information
+
+    Returns:
+        List of resource dictionaries with their details
+    """
+    client = asset_v1.AssetServiceClient()
+    resources_data = []
+    seen_resources = set()
+    try:
+        first_resource = None
+        for i, resource in enumerate(client.search_all_resources(scope=scope, asset_types=[asset_type])):
+            if i == 0:
+                first_resource = resource
+
+            resource_dict = {
+                'name': resource.name,
+                'asset_type': resource.asset_type,
+                'project': resource.project,
+                'display_name': getattr(resource, 'display_name', ''),
+                'location': getattr(resource, 'location', ''),
+                'parent_full_resource_name': resource.parent_full_resource_name
+            }
+
+            # Handle BigQuery dataset duplicates
+            if resource.asset_type == "bigquery.googleapis.com/Dataset":
+                key = (resource_dict['project'], resource_dict['name'])
+                if key in seen_resources:
+                    continue
+                seen_resources.add(key)
+                resources_data.append(resource_dict)
+            else:
+                resources_data.append(resource_dict)
+
+        if debug and first_resource:
+            print(json.dumps(MessageToDict(first_resource._pb), indent=2))
+    except Exception as e:
+        print(f"Error fetching resources from GCP: {e}")
+    return resources_data
+
 def load_asset_type_mapping():
-    """Return embedded asset type mapping"""
+    """
+    Returns the embedded asset type mapping.
+
+    Returns:
+        Dictionary of asset type aliases
+    """
     return dict(sorted(ASSET_TYPE_MAPPING.items()))
 
 def build_folder_tree(assets, queried_parent_type, queried_parent_id):
+    """
+    Builds a hierarchical tree of folders and projects from the given assets.
+
+    Args:
+        assets: List of asset dictionaries
+        queried_parent_type: Type of the parent asset (e.g., organizations, folders)
+        queried_parent_id: ID of the parent asset
+
+    Returns:
+        Dictionary representing the hierarchical tree
+    """
     folders = []
     root_level_projects = []
     projects = []
@@ -232,6 +269,15 @@ def build_folder_tree(assets, queried_parent_type, queried_parent_id):
     }
 
 def generate_tree_output(hierarchy_data):
+    """
+    Generates a string representation of the hierarchical tree.
+
+    Args:
+        hierarchy_data: Dictionary representing the hierarchical tree
+
+    Returns:
+        String representation of the tree
+    """
     output_lines = []
 
     # Root level projects
@@ -259,6 +305,15 @@ def generate_tree_output(hierarchy_data):
     return "\n".join(output_lines)
 
 def generate_json_output(hierarchy_data):
+    """
+    Generates a JSON representation of the hierarchical tree.
+
+    Args:
+        hierarchy_data: Dictionary representing the hierarchical tree
+
+    Returns:
+        JSON string representation of the tree
+    """
     # Convert hierarchy to JSON-serializable format
     def folder_to_dict(folder_data):
         return {
@@ -273,6 +328,15 @@ def generate_json_output(hierarchy_data):
     }, indent=2)
 
 def generate_tabular_output(hierarchy_data):
+    """
+    Generates a tabular representation of the hierarchical tree.
+
+    Args:
+        hierarchy_data: Dictionary representing the hierarchical tree
+
+    Returns:
+        List of rows for the table
+    """
     rows = []
 
     # Root level projects
@@ -315,17 +379,22 @@ def generate_tabular_output(hierarchy_data):
     return rows
 
 def print_resource_table(resources):
-    """Print tabular output for resources"""
+    """
+    Prints a table of resources.
+
+    Args:
+        resources: List of resource dictionaries
+    """
     if not resources:
         print("No resources found.")
         return
-    
+
     # Sort resources by project and then by name
     sorted_resources = sorted(resources, key=lambda r: (r.get('project', ''), r['name']))
-    
+
     # Print scope header
     print(f"Scope: {sorted_resources[0].get('scope', '')}")
-    
+
     headers = ["Name", "Project ID", "Location"]
     rows = []
 
@@ -358,12 +427,30 @@ def print_resource_table(resources):
         print("  ".join(str(row[i]).ljust(max_widths[i]) for i in range(len(row))))
 
 def print_tree_output(hierarchy_data):
+    """
+    Prints the hierarchical tree.
+
+    Args:
+        hierarchy_data: Dictionary representing the hierarchical tree
+    """
     print(generate_tree_output(hierarchy_data))
 
 def print_json_output(hierarchy_data):
+    """
+    Prints the JSON representation of the hierarchical tree.
+
+    Args:
+        hierarchy_data: Dictionary representing the hierarchical tree
+    """
     print(generate_json_output(hierarchy_data))
 
 def print_tabular_output(hierarchy_data):
+    """
+    Prints the tabular representation of the hierarchical tree.
+
+    Args:
+        hierarchy_data: Dictionary representing the hierarchical tree
+    """
     tabular_rows = generate_tabular_output(hierarchy_data)
     # Define column widths for fixed-length feel
     col_widths = [30, 40, 10, 30] # Adjust as needed: ID, DisplayName, Type, ParentID
@@ -383,6 +470,17 @@ def print_tabular_output(hierarchy_data):
         print("No data to display in tabular format.")
 
 def generate_pretty_tree_output(folder_data, prefix='', is_last=False):
+    """
+    Generates a pretty string representation of the hierarchical tree.
+
+    Args:
+        folder_data: Dictionary representing a folder in the tree
+        prefix: Prefix for indentation
+        is_last: If True, this is the last child
+
+    Returns:
+        List of lines for the pretty tree
+    """
     output = []
 
     # Print projects in this folder
@@ -420,6 +518,13 @@ def generate_pretty_tree_output(folder_data, prefix='', is_last=False):
     return output
 
 def print_pretty_tree_output(hierarchy_data, scope):
+    """
+    Prints the pretty string representation of the hierarchical tree.
+
+    Args:
+        hierarchy_data: Dictionary representing the hierarchical tree
+        scope: The scope of the tree
+    """
     output = [f"Scope: {scope}"]
 
     # Print root projects
@@ -470,7 +575,7 @@ def main():
 
     args = parser.parse_args()
     scope = args.scope
-    
+
     if args.command == "hierarchy":
         # Validate scope
         try:
