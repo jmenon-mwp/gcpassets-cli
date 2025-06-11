@@ -42,7 +42,7 @@ Displays folder/project hierarchy with four output formats:
 
 **Syntax:**
 ```bash
-python gcpassets-cli.py hierarchy --parent <PARENT_RESOURCE> [--output_format <FORMAT>]
+python3 gcpassets-cli.py hierarchy --parent <PARENT_RESOURCE> [--output_format <FORMAT>]
 ```
 
 **Output Formats:**
@@ -62,7 +62,7 @@ Scope: folders/987013313595
 
 **Example:**
 ```bash
-python gcpassets-cli.py hierarchy --parent organizations/1234567890 --output_format tree
+python3 gcpassets-cli.py hierarchy --parent organizations/1234567890 --output_format tree
 ```
 
 ### 2. `list-resources` - List Specific Resources
@@ -71,7 +71,7 @@ Lists GCP resources within a scope with simplified output.
 
 **Syntax:**
 ```bash
-python gcpassets-cli.py list-resources --type <RESOURCE_TYPE> --scope <SCOPE> [--format <FORMAT>] [--debug]
+python3 gcpassets-cli.py list-resources --type <RESOURCE_TYPE> --scope <SCOPE> [--format <FORMAT>] [--debug]
 ```
 
 **Options:**
@@ -89,13 +89,13 @@ Simplified fixed-width table with columns: `Project_ID` and `Resource_Name`
 **Examples:**
 ```bash
 # Tabular output (default)
-python gcpassets-cli.py list-resources --type vm --scope folders/987013313595
+python3 gcpassets-cli.py list-resources --type vm --scope folders/987013313595
 
 # JSON output
-python gcpassets-cli.py list-resources --type vm --scope folders/987013313595 --format json
+python3 gcpassets-cli.py list-resources --type vm --scope folders/987013313595 --format json
 
 # Debug mode
-python gcpassets-cli.py list-resources --type vm --scope folders/987013313595 --debug
+python3 gcpassets-cli.py list-resources --type vm --scope folders/987013313595 --debug
 ```
 
 ## Notes
