@@ -100,3 +100,10 @@ python3 gcpassets-cli.py list-resources --type vm --scope folders/987013313595 -
 
 ## Notes
 *   The script uses the Google Cloud Asset API to fetch asset data and the Cloud Resource Manager API to resolve project numbers to Project ID strings for more user-friendly output.
+*   **Asset Type Aliases**: Uses embedded aliases for common resource types (no external files needed)
+
+## Features
+
+- **Hierarchy Visualization**: View your GCP resource hierarchy in tree, tabular, JSON, or pretty formats
+- **Resource Listing**: List resources of a specific type within a scope
+- **Output Formats**: Supports JSON, tabular, and tree outputs

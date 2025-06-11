@@ -7,7 +7,6 @@ from google.auth import default as google_auth_default
 from google.cloud import asset_v1
 from googleapiclient.discovery import build
 from google.protobuf.json_format import MessageToDict
-from tabulate import tabulate
 
 class Spinner:
     def __init__(self, message=""):
