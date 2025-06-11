@@ -1,2 +1,3 @@
-google-cloud-asset>=3.0.0
-google-api-python-client
+google-cloud-asset==3.20.0
+requests==2.31.0
+protobuf==4.25.3

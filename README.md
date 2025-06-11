@@ -42,8 +42,12 @@ Displays folder/project hierarchy with four output formats:
 
 **Syntax:**
 ```bash
-python3 gcpassets-cli.py hierarchy --parent <PARENT_RESOURCE> [--output_format <FORMAT>]
+gcpassets-cli.py hierarchy --scope SCOPE [--format FORMAT]
 ```
+
+**Options:**
+- `--scope`: GCP organization scope (e.g. `organizations/123456789`)
+- `--format`: Output format (`tree`, `json`, `tabular`, `pretty`)
 
 **Output Formats:**
 - `tree` (default): Text-based tree showing org-level projects first
@@ -62,7 +66,7 @@ Scope: folders/987013313595
 
 **Example:**
 ```bash
-python3 gcpassets-cli.py hierarchy --parent organizations/1234567890 --output_format tree
+gcpassets-cli.py hierarchy --scope organizations/1234567890 --format tree
 ```
 
 ### 2. `list-resources` - List Specific Resources
@@ -71,17 +75,17 @@ Lists GCP resources within a scope with simplified output.
 
 **Syntax:**
 ```bash
-python3 gcpassets-cli.py list-resources --type <RESOURCE_TYPE> --scope <SCOPE> [--format <FORMAT>] [--debug]
+gcpassets-cli.py list-resources --scope SCOPE --type RESOURCE_TYPE [--format FORMAT] [--debug]
 ```
 
 **Options:**
-- `--type`: Resource type to list (vm, storagebucket, clusters, cloudsql, vpcs, loadbalancers, classicvpns, bqdatasets, disks, routers, etc.)
-- `--scope`: Search scope (organizations/ID, folders/ID, projects/ID)
-- `--format`: Output format (`tabular` (default), `json`)
-- `--debug`: Show debug information including API responses
+- `--scope`: GCP organization scope
+- `--type`: Resource type (vm, storagebucket, etc.)
+- `--format`: Output format (`tabular`, `json`, `csv`)
+- `--debug`: Enable debug output
 
 **Resource Types:**
-`vm`, `storagebucket`, `clusters`, `cloudsql`, `vpcs`, `loadbalancers`, `classicvpns`, `bqdatasets`, `disks`, `routers`, `dnszones`, `vpntunnels`, `firewalls`, `subnets`
+`bqdatasets`, `buckets`, `ca`, `ca-pool`, `classicvpns`, `cloud-run`, `cloudsql`, `clusters`, `dataproc-cluster`, `disks`, `dnszones`, `filestore-instance`, `firewalls`, `gke-cluster`, `loadbalancers`, `logbucket`, `memcacheinstance`, `networkhub`, `networkspoke`, `pubsub-subscription`, `pubsub-topic`, `regiondisk`, `reservation`, `route`, `routers`, `secret`, `securitypolicy`, `serviceaccount`, `snapshot`, `spanner-instance`, `sslcert`, `sslpolicy`, `subnets`, `svcattachment`, `target-http-proxy`, `target-https-proxy`, `target-instance`, `target-pool`, `target-ssl-proxy`, `target-vpn-gateway`, `urlmap`, `vm`, `vpcs`, `vpc-connector`, `vpngateway`, `vpntunnels`
 
 **Output:**
 Simplified fixed-width table with columns: `Project_ID` and `Resource_Name`
@@ -89,13 +93,16 @@ Simplified fixed-width table with columns: `Project_ID` and `Resource_Name`
 **Examples:**
 ```bash
 # Tabular output (default)
-python3 gcpassets-cli.py list-resources --type vm --scope folders/987013313595
+gcpassets-cli.py list-resources --scope folders/987013313595 --type vm
 
 # JSON output
-python3 gcpassets-cli.py list-resources --type vm --scope folders/987013313595 --format json
+gcpassets-cli.py list-resources --scope folders/987013313595 --type vm --format json
+
+# CSV output
+gcpassets-cli.py list-resources --scope folders/987013313595 --type vm --format csv
 
 # Debug mode
-python3 gcpassets-cli.py list-resources --type vm --scope folders/987013313595 --debug
+gcpassets-cli.py list-resources --scope folders/987013313595 --type vm --debug
 ```
 
 ## Notes
@@ -104,6 +111,11 @@ python3 gcpassets-cli.py list-resources --type vm --scope folders/987013313595 -
 
 ## Features
 
-- **Hierarchy Visualization**: View your GCP resource hierarchy in tree, tabular, JSON, or pretty formats
-- **Resource Listing**: List resources of a specific type within a scope
-- **Output Formats**: Supports JSON, tabular, and tree outputs
+- **Hierarchy Visualization**: Display GCP resource hierarchy (organizations, folders, projects)
+- **Resource Listing**: List resources of specific types within a scope
+- **Output Formats**: Supports multiple output formats:
+  - `tree`: Hierarchical tree view
+  - `pretty`: Pretty-printed tree view
+  - `json`: JSON output
+  - `tabular`: Tabular output
+  - `csv`: CSV output

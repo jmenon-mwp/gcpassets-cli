@@ -1,11 +1,15 @@
+#!/usr/bin/env python3
 import argparse
+import csv
+import itertools
 import json
 import os
+import re
+import sys
 import threading
 import time
-from google.auth import default as google_auth_default
+from datetime import datetime, timedelta
 from google.cloud import asset_v1
-from googleapiclient.discovery import build
 from google.protobuf.json_format import MessageToDict
 
 # Embedded API type aliases
@@ -55,30 +59,30 @@ ASSET_TYPE_MAPPING = {
 }
 
 class Spinner:
-    def __init__(self, message=""):
-        self.running = False
-        self.thread = None
+    """
+    A simple spinner class for command-line interfaces
+    """
+    def __init__(self, message):
         self.message = message
+        self.running = False
+        self.spinner = itertools.cycle(['-', '/', '|', '\\'])
+        self.thread = threading.Thread(target=self._spin)
 
     def start(self):
         self.running = True
-        self.thread = threading.Thread(target=self._spin)
-        self.thread.daemon = True
         self.thread.start()
 
     def _spin(self):
-        chars = "|/-\\"
-        idx = 0
         while self.running:
-            print(f"\r{self.message}{chars[idx]}", end="", flush=True)
-            idx = (idx + 1) % len(chars)
+            sys.stdout.write(f"\r{self.message} {next(self.spinner)}")
+            sys.stdout.flush()
             time.sleep(0.1)
 
     def stop(self):
         self.running = False
-        if self.thread:
-            self.thread.join()
-        print(f"\r{self.message}done.", flush=True)
+        self.thread.join()
+        sys.stdout.write("\r" + " " * (len(self.message) + 2) + "\r")
+        sys.stdout.flush()
 
 def fetch_assets(scope, debug=False):
     """
@@ -124,7 +128,7 @@ def fetch_flat_resources(scope, asset_type, debug=False):
     Args:
         scope: The GCP scope to search within (e.g., organizations/1234567890)
         asset_type: The type of resource to fetch (e.g., compute.googleapis.com/Instance)
-        debug: If True, prints debug information
+        debug: If True, prints the first resource in raw format and exits
 
     Returns:
         List of resource dictionaries with their details
@@ -137,6 +141,10 @@ def fetch_flat_resources(scope, asset_type, debug=False):
         for i, resource in enumerate(client.search_all_resources(scope=scope, asset_types=[asset_type])):
             if i == 0:
                 first_resource = resource
+                if debug:
+                    # In debug mode, print the raw first resource and exit
+                    print(json.dumps(MessageToDict(first_resource._pb), indent=2))
+                    return []
 
             resource_dict = {
                 'name': resource.name,
@@ -157,11 +165,56 @@ def fetch_flat_resources(scope, asset_type, debug=False):
             else:
                 resources_data.append(resource_dict)
 
-        if debug and first_resource:
-            print(json.dumps(MessageToDict(first_resource._pb), indent=2))
     except Exception as e:
         print(f"Error fetching resources from GCP: {e}")
     return resources_data
+
+def fetch_folder_hierarchy(scope, debug=False):
+    """
+    Fetches folder hierarchy from GCP
+
+    Args:
+        scope: GCP scope
+        debug: Whether to enable debug output
+
+    Returns:
+        List of folders and projects
+    """
+    client = asset_v1.AssetServiceClient()
+    folders = []
+    projects = []
+
+    # Fetch folders
+    response = client.search_all_resources(
+        scope=scope,
+        asset_types=["cloudresourcemanager.googleapis.com/Folder"],
+        page_size=500
+    )
+
+    for i, folder in enumerate(response):
+        if debug and i == 0:
+            print(json.dumps(MessageToDict(folder._pb), indent=2))
+            return []  # Exit after printing first resource in debug mode
+
+        folder_dict = MessageToDict(folder._pb)
+        folders.append(folder_dict)
+
+    # Fetch projects
+    response = client.search_all_resources(
+        scope=scope,
+        asset_types=["cloudresourcemanager.googleapis.com/Project"],
+        page_size=500
+    )
+
+    for i, project in enumerate(response):
+        if debug and i == 0:
+            print(json.dumps(MessageToDict(project._pb), indent=2))
+            return []  # Exit after printing first resource in debug mode
+
+        project_dict = MessageToDict(project._pb)
+        projects.append(project_dict)
+
+    return folders + projects
 
 def load_asset_type_mapping():
     """
@@ -378,12 +431,13 @@ def generate_tabular_output(hierarchy_data):
 
     return rows
 
-def print_resource_table(resources):
+def print_resource_table(resources, scope):
     """
     Prints a table of resources.
 
     Args:
         resources: List of resource dictionaries
+        scope: The scope of the resources
     """
     if not resources:
         print("No resources found.")
@@ -393,7 +447,7 @@ def print_resource_table(resources):
     sorted_resources = sorted(resources, key=lambda r: (r.get('project', ''), r['name']))
 
     # Print scope header
-    print(f"Scope: {sorted_resources[0].get('scope', '')}")
+    print(f"Scope: {scope}")
 
     headers = ["Name", "Project ID", "Location"]
     rows = []
@@ -409,10 +463,17 @@ def print_resource_table(resources):
             if parent_full.startswith("//cloudresourcemanager.googleapis.com/projects/"):
                 project_id = parent_full.split("/")[-1]
 
+        location = resource.get('location', '')
+
+        # Escape double quotes and handle commas
+        short_name = short_name.replace('"', '""')
+        project_id = project_id.replace('"', '""')
+        location = location.replace('"', '""')
+
         row_data = [
             short_name,
             project_id,
-            resource.get('location', '')
+            location
         ]
         rows.append(row_data)
 
@@ -558,6 +619,36 @@ def print_pretty_tree_output(hierarchy_data, scope):
     for line in output:
         print(line)
 
+def print_csv_output(resources, scope):
+    """
+    Prints resources in CSV format.
+
+    Args:
+        resources: List of resource dictionaries
+        scope: The scope of the resources
+    """
+    if not resources:
+        print("No resources found.")
+        return
+
+    # Print header
+    print("Name,Project ID,Location,Scope")
+
+    # Print each resource
+    for resource in resources:
+        name_parts = resource['name'].split('/')
+        short_name = name_parts[-1] if name_parts else resource['name']
+        project_id = resource['project']
+        location = resource.get('location', '')
+
+        # Escape double quotes and handle commas
+        short_name = short_name.replace('"', '""')
+        project_id = project_id.replace('"', '""')
+        location = location.replace('"', '""')
+        scope_str = scope.replace('"', '""')
+
+        print(f'"{short_name}","{project_id}","{location}","{scope_str}"')
+
 def main():
     parser = argparse.ArgumentParser(description="GCP Asset Lister CLI.")
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
@@ -565,12 +656,11 @@ def main():
     hierarchy_parser = subparsers.add_parser("hierarchy", help="Display asset hierarchy (folders, projects).")
     hierarchy_parser.add_argument("--scope", required=True, help="GCP organization scope (e.g. organizations/123456789)")
     hierarchy_parser.add_argument("--format", choices=["tree", "json", "tabular", "pretty"], default="tree", help="Output format")
-    hierarchy_parser.add_argument("--debug", action="store_true", help="Enable debug output")
 
     list_parser = subparsers.add_parser("list-resources", help="List resources of a specific type.")
     list_parser.add_argument("--scope", required=True, help="GCP organization scope (e.g. organizations/123456789)")
     list_parser.add_argument("--type", required=True, help="Resource type to list (e.g., compute.googleapis.com/Instance)")
-    list_parser.add_argument("--format", choices=["json", "tabular"], default="tabular", help="Output format")
+    list_parser.add_argument("--format", choices=["json", "tabular", "csv"], default="tabular", help="Output format")
     list_parser.add_argument("--debug", action="store_true", help="Enable debug output")
 
     args = parser.parse_args()
@@ -588,7 +678,7 @@ def main():
             return
 
         try:
-            assets = fetch_assets(scope, args.debug)
+            assets = fetch_assets(scope)
         except Exception as e:
             print(f"Error fetching assets from GCP: {e}")
             return
@@ -613,25 +703,32 @@ def main():
         asset_type_mapping = load_asset_type_mapping()
         asset_type = asset_type_mapping.get(args.type, args.type)
 
-        spinner = Spinner(f"Fetching {args.type} resources... ")
-        spinner.start()
+        if not args.debug:
+            spinner = Spinner(f"Fetching {args.type} resources... ")
+            spinner.start()
+
         try:
             resources = fetch_flat_resources(scope, asset_type, args.debug)
         finally:
-            spinner.stop()
+            if not args.debug:
+                spinner.stop()
 
-        if not resources:
+        if not resources and not args.debug:
             print("No resources found.")
             return
 
-        # Add scope to each resource for header
-        for r in resources:
-            r['scope'] = scope
-
-        if args.format == "json":
+        if args.debug:
+            # In debug mode, output already printed in fetch_flat_resources
+            pass
+        elif args.format == "json":
+            # Add scope to each resource
+            for r in resources:
+                r['scope'] = scope
             print(json.dumps(resources, indent=2))
-        elif args.format == "tabular":
-            print_resource_table(resources)
+        elif args.format == "csv":
+            print_csv_output(resources, scope)
+        else:  # tabular
+            print_resource_table(resources, scope)
 
 if __name__ == "__main__":
     main()
