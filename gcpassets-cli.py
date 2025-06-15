@@ -586,13 +586,14 @@ def fetch_assets(scope, debug=False):
         print(f"Error fetching assets from GCP: {e}")
     return assets_from_api
 
-def fetch_flat_resources(scope, asset_type, debug=False):
+def fetch_flat_resources(scope, asset_type, folders_dict, debug=False):
     """
     Fetches GCP resources of a specific type for the given scope.
 
     Args:
-        scope: The GCP scope to search within (e.g., organizations/1234567890)
+        scope: The GCP scope to search within (e.g., organizations/123456789)
         asset_type: The type of resource to fetch (e.g., compute.googleapis.com/Instance)
+        folders_dict: Dictionary mapping folder IDs to display names
         debug: If True, prints the first resource in raw format and exits
 
     Returns:
@@ -620,6 +621,22 @@ def fetch_flat_resources(scope, asset_type, debug=False):
                 'parent_full_resource_name': resource.parent_full_resource_name
             }
 
+            # Build path from folders hierarchy
+            path_parts = []
+            if hasattr(resource, 'folders') and resource.folders:
+                for folder_id in reversed(resource.folders):
+                    # Extract folder ID without 'folders/' prefix
+                    folder_id_clean = folder_id.split('/')[-1] if '/' in folder_id else folder_id
+                    if folder_id_clean in folders_dict:
+                        path_parts.append(folders_dict[folder_id_clean])
+                    else:
+                        path_parts.append(folder_id_clean)  # Fallback to ID if name not found
+
+            # Extract project ID from parentFullResourceName
+            project_id = resource.parent_full_resource_name.split('/')[-1] if resource.parent_full_resource_name else 'Unknown'
+            path_parts.append(project_id)
+            resource_dict['path'] = '/'.join(path_parts)
+
             # Handle BigQuery dataset duplicates
             if resource.asset_type == "bigquery.googleapis.com/Dataset":
                 key = (resource_dict['project'], resource_dict['name'])
@@ -631,7 +648,9 @@ def fetch_flat_resources(scope, asset_type, debug=False):
                 resources_data.append(resource_dict)
 
     except Exception as e:
-        print(f"Error fetching resources from GCP: {e}")
+        print(f"Error fetching resources: {e}")
+        return []
+
     return resources_data
 
 def fetch_folder_hierarchy(scope, debug=False):
@@ -898,7 +917,7 @@ def generate_tabular_output(hierarchy_data):
 
 def print_resource_table(resources, scope):
     """
-    Prints a table of resources.
+    Prints resources in a tabular format.
 
     Args:
         resources: List of resource dictionaries
@@ -914,7 +933,7 @@ def print_resource_table(resources, scope):
     # Print scope header
     print(f"Scope: {scope}")
 
-    headers = ["Name", "Project ID", "Location"]
+    headers = ["Name", "Project ID", "Location", "Full Path"]
     rows = []
 
     for resource in sorted_resources:
@@ -929,28 +948,39 @@ def print_resource_table(resources, scope):
                 project_id = parent_full.split("/")[-1]
 
         location = resource.get('location', '')
+        path = resource.get('path', '')
 
         # Escape double quotes and handle commas
         short_name = short_name.replace('"', '""')
         project_id = project_id.replace('"', '""')
         location = location.replace('"', '""')
+        path = path.replace('"', '""')
 
         row_data = [
             short_name,
             project_id,
-            location
+            location,
+            path
         ]
         rows.append(row_data)
 
-    # Calculate max widths for each column
-    max_widths = [max(len(str(row[i])) for row in rows + [headers]) for i in range(len(headers))]
+    # Calculate column widths
+    col_widths = [len(header) for header in headers]
+    for row in rows:
+        for i, field in enumerate(row):
+            col_widths[i] = max(col_widths[i], len(str(field)))
+
+    # Create format strings
+    header_format_string = "  ".join(["{:<" + str(w) + "}" for w in col_widths])
+    row_format_string = "  ".join(["{:<" + str(w) + "}" for w in col_widths])
 
     # Print table
-    header_line = "  ".join(headers[i].ljust(max_widths[i]) for i in range(len(headers)))
-    print(header_line)
-    print("-" * len(header_line))
-    for row in sorted(rows, key=lambda x: (x[1], x[0])):
-        print("  ".join(str(row[i]).ljust(max_widths[i]) for i in range(len(row))))
+    print()
+    print(header_format_string.format(*headers))
+    print("-" * (sum(col_widths) + len(col_widths) * 2))
+
+    for row_data in rows:
+        print(row_format_string.format(*row_data))
 
 def print_tree_output(hierarchy_data):
     """
@@ -1125,7 +1155,7 @@ def print_csv_output(resources, scope):
         return
 
     # Print header
-    print("Name,Project ID,Location,Scope")
+    print("Name,Project ID,Location,Scope,Full Path")
 
     # Print each resource
     for resource in resources:
@@ -1133,14 +1163,16 @@ def print_csv_output(resources, scope):
         short_name = name_parts[-1] if name_parts else resource['name']
         project_id = resource['project']
         location = resource.get('location', '')
+        path = resource.get('path', '')
 
         # Escape double quotes and handle commas
         short_name = short_name.replace('"', '""')
         project_id = project_id.replace('"', '""')
         location = location.replace('"', '""')
         scope_str = scope.replace('"', '""')
+        path = path.replace('"', '""')
 
-        print(f'"{short_name}","{project_id}","{location}","{scope_str}"')
+        print(f'"{short_name}","{project_id}","{location}","{scope_str}","{path}"')
 
 def main():
     parser = argparse.ArgumentParser(description="GCP Asset Lister CLI.")
@@ -1198,12 +1230,14 @@ def main():
         asset_type_key = args.type.lower()
         asset_type = asset_type_mapping.get(asset_type_key, args.type)
 
+        folders_dict = get_folders_dict(scope)
+
         if not args.debug:
             spinner = Spinner(f"Fetching {args.type} resources... ")
             spinner.start()
 
         try:
-            resources = fetch_flat_resources(scope, asset_type, args.debug)
+            resources = fetch_flat_resources(scope, asset_type, folders_dict, args.debug)
         finally:
             if not args.debug:
                 spinner.stop()
