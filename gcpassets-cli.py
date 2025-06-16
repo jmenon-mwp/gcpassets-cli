@@ -618,7 +618,8 @@ def fetch_flat_resources(scope, asset_type, folders_dict, debug=False):
                 'project': resource.project,
                 'display_name': getattr(resource, 'display_name', ''),
                 'location': getattr(resource, 'location', ''),
-                'parent_full_resource_name': resource.parent_full_resource_name
+                'parent_full_resource_name': resource.parent_full_resource_name,
+                'additional_attributes': getattr(resource, 'additional_attributes', {})
             }
 
             # Build path from folders hierarchy
