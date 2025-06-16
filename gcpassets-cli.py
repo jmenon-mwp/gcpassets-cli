@@ -930,9 +930,6 @@ def print_resource_table(resources, scope):
     # Sort resources by project and then by name
     sorted_resources = sorted(resources, key=lambda r: (r.get('project', ''), r['name']))
 
-    # Print scope header
-    print(f"Scope: {scope}")
-
     headers = ["Name", "Project ID", "Location", "Full Path"]
     rows = []
 
@@ -1191,61 +1188,59 @@ def main():
     args = parser.parse_args()
     scope = args.scope
 
+    spinner = Spinner("Fetching folder information... ")
+    spinner.start()
+    folders_dict = get_folders_dict(scope)
+    spinner.stop()
+
+    # Get folder display name if scope is a folder
+    scope_str = scope
+    if scope.startswith("folders/"):
+        folder_id = scope.split('/')[1]
+        if folder_id in folders_dict:
+            scope_str = f"{folders_dict[folder_id]} ({folder_id})"
+
     if args.command == "hierarchy":
-        # Validate scope
+        spinner = Spinner("Building folder hierarchy... ")
+        spinner.start()
         try:
-            parent_type, parent_id = scope.split('/', 1)
-            if parent_type not in ["organizations", "folders"] or not parent_id.strip():
-                raise ValueError("Scope must be 'organizations/<id>' or 'folders/<id>'. Received: '{scope}'. Details: {e}")
-            parent_id = parent_id.strip()
-        except ValueError as e:
-            print(f"Error: Invalid --scope format. Must be 'organizations/<id>' or 'folders/<id>'. Received: '{scope}'. Details: {e}")
-            return
-
-        try:
-            assets = fetch_assets(scope)
-        except Exception as e:
-            print(f"Error fetching assets from GCP: {e}")
-            return
-
-        if not assets:
-            print("No assets found under the specified parent or an error occurred during fetching.")
-            return
-
-        hierarchy_data = build_folder_tree(assets, parent_type, parent_id)
-
+            # Extract root type and ID from scope
+            root_type = scope.split('/')[0]
+            root_id = scope.split('/')[1]
+            hierarchy_data = build_folder_tree(fetch_assets(scope), root_type, root_id)
+        finally:
+            spinner.stop()
+        
+        print(f"Scope: {scope_str}\n")
         if args.format == "tree":
             print_tree_output(hierarchy_data)
         elif args.format == "json":
-            print_json_output(hierarchy_data)
+            print(generate_json_output(hierarchy_data))
         elif args.format == "tabular":
             print_tabular_output(hierarchy_data)
         elif args.format == "pretty":
             print_pretty_tree_output(hierarchy_data, scope)
 
     elif args.command == "list-resources":
+
         # Load resource type mapping
         asset_type_mapping = load_asset_type_mapping()
         # Convert user input to lowercase for case-insensitive lookup
         asset_type_key = args.type.lower()
         asset_type = asset_type_mapping.get(asset_type_key, args.type)
 
-        folders_dict = get_folders_dict(scope)
-
-        if not args.debug:
-            spinner = Spinner(f"Fetching {args.type} resources... ")
-            spinner.start()
-
+        spinner = Spinner(f"Fetching {args.type} resources... ")
+        spinner.start()
         try:
             resources = fetch_flat_resources(scope, asset_type, folders_dict, args.debug)
         finally:
-            if not args.debug:
-                spinner.stop()
+            spinner.stop()
 
         if not resources and not args.debug:
             print("No resources found.")
             return
 
+        print(f"Scope: {scope_str}\n")
         if args.debug:
             # In debug mode, output already printed in fetch_flat_resources
             pass
