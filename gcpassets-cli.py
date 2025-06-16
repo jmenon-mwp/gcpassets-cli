@@ -1188,6 +1188,15 @@ def main():
     args = parser.parse_args()
     scope = args.scope
 
+    # Validate resource type if command is list-resources
+    if args.command == "list-resources":
+        asset_type_mapping = load_asset_type_mapping()
+        asset_type_key = args.type.lower()
+        if asset_type_key not in asset_type_mapping:
+            available_types = ", ".join(sorted(asset_type_mapping.keys()))
+            print(f"Error: Resource type '{args.type}' not found. \n\nAvailable types are: \n{available_types}")
+            sys.exit(1)
+
     spinner = Spinner("Fetching folder information... ")
     spinner.start()
     folders_dict = get_folders_dict(scope)
@@ -1222,11 +1231,6 @@ def main():
             print_pretty_tree_output(hierarchy_data, scope)
 
     elif args.command == "list-resources":
-
-        # Load resource type mapping
-        asset_type_mapping = load_asset_type_mapping()
-        # Convert user input to lowercase for case-insensitive lookup
-        asset_type_key = args.type.lower()
         asset_type = asset_type_mapping.get(asset_type_key, args.type)
 
         spinner = Spinner(f"Fetching {args.type} resources... ")
